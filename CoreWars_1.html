@@ -1,0 +1,455 @@
+<html>
+<canvas id="theCanvas" width="800" height="600" style="border: 1px solid black"></canvas>
+<script>
+function strat_random(){
+    strat = [];
+    for(x=0;x<15;x++){
+        if(Math.random()>.8){
+            strat[x] = [0,Math.floor(Math.random()*14+1),Math.round(Math.random()),0];
+        }
+        else{
+            if(Math.random()>.7){
+                strat[x] = [1,Math.floor(Math.random()*14+1),Math.round(Math.random()),0]
+            }
+            else{
+                if(Math.random()>.5){
+                    strat[x] = [Math.round(Math.random()+5),Math.floor(Math.random()*14+1),4,16];
+                }
+                else{
+                    strat[x] = [Math.round(Math.random()+7),Math.floor(Math.random()*15),0,Math.round(Math.random()*3+3)]
+                }
+            }
+        }
+    }
+    return strat;
+}
+function safe(input){
+    while(input<0){
+        input += cells;
+    }
+    while(input>=cells){
+        input -= cells;
+    }
+    return input;
+}
+function numToChar(num){
+    return num.toString(16).toUpperCase();
+}
+function draw(){
+    halfCell = cellSize/2;
+    ctx.font = "10px Courier";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "black";
+    ctx.fillRect(0,0,cnvs.width,cnvs.height);
+    for(a=0;a<tournament.players;a++){
+        ctx.fillStyle = player[a].col;
+        for(b=0;b<player[a].processList.length;b++){
+            x = (player[a].processList[b]%cellsPerRow)*cellSize;
+            y = Math.floor(player[a].processList[b]/cellsPerRow)*cellSize;
+            ctx.fillRect(x,y,cellSize,cellSize);
+        }
+    }
+    for(a=0;a<cells;a++){
+        ctx.fillStyle = "white";
+        str = "";
+        for(b=0;b<4;b++){
+            str += numToChar(data[a][b]);
+        }
+        if(data[a][0]==4){
+            ctx.fillStyle = "red";
+        }
+        x = (a%cellsPerRow)*cellSize+halfCell;
+        y = Math.floor(a/cellsPerRow)*cellSize+halfCell;
+        ctx.fillText(str,x,y);
+    }
+    listWidth = cnvs.width-boardWidth;
+    itemWidth = listWidth/tournament.players;
+    itemHeight = 10;
+    halfItem = itemWidth/2;
+    for(a=0;a<tournament.players;a++){
+        if((game.turn+game.startingPlayer)%tournament.players==a){
+            ctx.fillStyle = "white";
+            ctx.fillRect(itemWidth*a+boardWidth,0,itemWidth,itemHeight/2);
+        }
+        ctx.fillStyle = player[a].col;
+        for(b=0;b<player[a].processList.length;b++){
+            ctx.fillText(player[a].processList[b],itemWidth*a+halfItem+boardWidth,(b+1)*itemHeight);
+        }
+    }
+}
+function prepRound(){
+    data = [];
+    for(a=0;a<cells;a++){
+        data[a] = [];
+        for(b=0;b<4;b++){
+            data[a][b] = 0;
+        }
+    }
+    player = [];
+    for(a=0;a<tournament.players;a++){
+        player[a] = {status:"alive",
+            processes:1,
+            processList:[],
+            program:programs[a],
+            programLength:programs[a].length,
+            col:"hsl(" + Math.floor(Math.random()*360) + ",100%,50%)"
+        }
+    }
+    totalLength = 0;
+    for(a=0;a<tournament.players;a++){
+        totalLength += player[a].programLength;
+    }
+    roomBetween = [];
+    for(a=0;a<tournament.players;a++){
+        roomBetween[a] = 0;
+    }
+    for(a=0;a<cells-totalLength;a++){
+        roomBetween[Math.floor(Math.random()*tournament.players)] += 1;
+    }
+    writeHead = Math.floor(Math.random()*cells);
+    for(a=0;a<tournament.players;a++){
+        player[a].processList[0] = writeHead;
+        for(b=0;b<player[a].programLength;b++){
+            data[writeHead] = player[a].program[b];
+            writeHead = (writeHead+1)%cells;
+        }
+        for(b=0;b<roomBetween[a];b++){
+            writeHead = (writeHead+1)%cells;
+        }
+    }
+    game = {turn:0,
+        startingPlayer:Math.floor(Math.random()*tournament.players)};
+}
+function killAt(killAddress){
+    killAddress = safe(killAddress);
+    for(a=0;a<tournament.players;a++){
+        for(b=0;b<player[a].processList.length;b++){
+            if(killAddress==player[a].processList[b]){
+                player[a].processList.slice(b,1);
+                player[a].processes -= 1;
+            }
+        }
+    }
+}
+function checkForEndOfRound(){
+    playersDead = 0;
+    lastAlive = 0;
+    for(a=0;a<tournament.players;a++){
+        if((player[a].status=="dead")||(player[a].processList.length==0)){
+            playersDead += 1;
+        }
+        else{
+            lastAlive = a;
+        }
+    }
+    if(playersDead==tournament.players-1){
+        return lastAlive;
+    }
+    else{
+        return -1;
+    }
+}
+function prune(playerToPrune){
+    newProcessList = [];
+    for(a=0;a<player[playerToPrune].processList.length;a++){
+        matchFound = false;
+        for(b=0;b<newProcessList.length;b++){
+            if(newProcessList[b]==player[playerToPrune].processList[a]){
+                matchFound = true;
+            }
+        }
+        if(!matchFound){
+            newProcessList[newProcessList.length] = player[playerToPrune].processList[a];
+        }
+    }
+    player[playerToPrune].processList = newProcessList;
+}
+function processStep(){
+    testValue = checkForEndOfRound();
+    if(testValue>-1){
+        for(a=0;a<tournament.players;a++){
+            if(a!=testValue){
+                wins[testValue][a] += 1;
+            }
+        }
+        tournament.currentRound += 1;
+        prepRound();
+    }
+    currentPlayer = (game.turn+game.startingPlayer)%tournament.players;
+    prune(currentPlayer);
+    if(player[currentPlayer].status=="alive"){
+        if(player[currentPlayer].processList.length>0){
+            currentAddress = player[currentPlayer].processList[0];
+            // KILL CURRENT PROCESS
+            if(data[currentAddress][0]==4){
+                player[currentPlayer].processList.shift();
+                player[currentPlayer].processes = processList.length;
+            }
+            else{
+                switch(data[currentAddress][0]){
+                    // CREATE NEW PROCESS
+                    case 0:
+                        dir = 1-(2*(data[currentAddress][2]%2));
+                        toAdd = safe(dir*data[currentAddress][1]+currentAddress);
+                        player[currentPlayer].processList.shift();
+                        killAt(toAdd);
+                        player[currentPlayer].processList.push(toAdd);
+                        killAt(safe(currentAddress+1));
+                        player[currentPlayer].processList.push(safe(currentAddress+1));
+                        player[currentPlayer].processes = player[currentPlayer].processList.length;
+                        break;
+                    // MOVE CURRENT PROCESS
+                    case 1:
+                        dir = 1-(2*(data[currentAddress][2]%2));
+                        toMove = safe(data[currentAddress][1]*dir+currentAddress);
+                        player[currentPlayer].processList.shift();
+                        killAt(toMove);
+                        player[currentPlayer].processList.push(toMove);
+                        break;
+                    // MOVE A IF B == C
+                    case 2:
+                        target = safe(currentAddress+data[currentAddress][1]);
+                        if(data[currentAddress][2]==data[currentAddress][3]){
+                            player[currentPlayer].processList.shift();
+                            killAt(target);
+                            player[currentPlayer].processList.push(target);
+                        }
+                        else{
+                            player[currentPlayer].processList.shift();
+                            killAt(safe(currentAddress+1));
+                            player[currentPlayer].processList.push(safe(currentAddress+1));
+                        }
+                        break;
+                    // MOVE A IF B > C
+                    case 3:
+                        target = safe(currentAddress+data[currentAddress][1]);
+                        if(data[currentAddress][2]>data[currentAddress][3]){
+                            player[currentPlayer].processList.shift();
+                            killAt(target);
+                            player[currentPlayer].processList.push(target);
+                        }
+                        else{
+                            player[currentPlayer].processList.shift();
+                            killAt(safe(currentAddress+1));
+                            player[currentPlayer].processList.push(safe(currentAddress+1));
+                        }
+                        break;
+                    // WRITE B into A ahead with mask C
+                    case 5:
+                        mask = data[currentAddress][3].toString(2);
+                        while(mask.length<4){
+                            mask = "0" + mask;
+                        }
+                        writtenAddress = safe(currentAddress+data[currentAddress][1]);
+                        for(a=0;a<4;a++){
+                            data[writtenAddress][a] = data[currentAddress][2];
+                        }
+                        player[currentPlayer].processList.shift();
+                        killAt(safe(currentAddress+1));
+                        player[currentPlayer].processList.push(safe(currentAddress+1));
+                        break;
+                    // WRITE B into A behind with mask C
+                    case 6:
+                        mask = data[currentAddress][3].toString(2);
+                        while(mask.length<4){
+                            mask = "0" + mask;
+                        }
+                        writtenAddress = safe(currentAddress-data[currentAddress][1]);
+                        for(a=0;a<4;a++){
+                            data[writtenAddress][a] = data[currentAddress][2];
+                        }
+                        player[currentPlayer].processList.shift();
+                        killAt(safe(currentAddress+1));
+                        player[currentPlayer].processList.push(safe(currentAddress+1));
+                        break;
+                    // Copy from A to B after that to C ahead
+                    case 7:
+                        start = safe(currentAddress+data[currentAddress][1]);
+                        range = data[currentAddress][2];
+                        to = safe(currentAddress+data[currentAddress][3]);
+                        for(a=0;a<range;a++){
+                            data[safe(to+a)] = data[safe(start+a)];
+                        }
+                        player[currentPlayer].processList.shift();
+                        killAt(safe(currentAddress+1));
+                        player[currentPlayer].processList.push(safe(currentAddress+1));
+                        break;
+                    // Copy from A to B after that to C behind
+                    case 8:
+                        start = safe(currentAddress+data[currentAddress][1]);
+                        range = data[currentAddress][2];
+                        to = safe(currentAddress-data[currentAddress][3]);
+                        for(a=0;a<range;a++){
+                            data[safe(to+a)] = data[safe(start+a)];
+                        }
+                        player[currentPlayer].processList.shift();
+                        killAt(safe(currentAddress+1));
+                        player[currentPlayer].processList.push(safe(currentAddress+1));
+                        break;
+                    // INCREMENT TARGET BASED ON MASK
+                    case 9:
+                        dir = 1-(2*(data[currentAddress][2]%2));
+                        mask = data[currentAddress][2].toString(2);
+                        target = safe(dir*data[currentAddress][1]+currentAddress);
+                        while(mask.length<4){
+                            mask = "0" + mask;
+                        }
+                        for(a=0;a<4;a++){
+                            if(mask.charAt(a)=="1"){
+                                data[target][a] = (data[target][a]+1)%16;
+                            }
+                        }
+                        player[currentPlayer].processList.shift();
+                        killAt(safe(currentAddress+1));
+                        player[currentPlayer].processList.push(safe(currentAddress+1));
+                        break;
+                    // DECREMENT TARGET BASED ON MASK
+                    case 10:
+                        dir = 1-(2*(data[currentAddress][2]%2));
+                        mask = data[currentAddress][2].toString(2);
+                        target = safe(dir*data[currentAddress][1]+currentAddress);
+                        while(mask.length<4){
+                            mask = "0" + mask;
+                        }
+                        for(a=0;a<4;a++){
+                            if(mask.charAt(a)=="1"){
+                                data[target][a] = (data[target][a]+15)%16;
+                            }
+                        }
+                        player[currentPlayer].processList.shift();
+                        killAt(safe(currentAddress+1));
+                        player[currentPlayer].processList.push(safe(currentAddress+1));
+                        break;
+                    // ADD SOURCE TO TARGET
+                    case 11:
+                        mask = data[currentAddress][3].toString(2);
+                        target = safe(currentAddress+data[currentAddress][2]);
+                        source = safe(currentAddress+data[currentAddress][1]);
+                        while(mask.length<4){
+                            mask = "0" + mask;
+                        }
+                        for(a=0;a<4;a++){
+                            if(mask.charAt(a)=="1"){
+                                data[target][a] = (data[target][a]+data[source][a])%16;
+                            }
+                        }
+                        player[currentPlayer].processList.shift();
+                        killAt(safe(currentAddress+1));
+                        player[currentPlayer].processList.push(safe(currentAddress+1));
+                        break;
+                    // MULTIPLY TARGET BY SOURCE
+                    case 12:
+                        mask = data[currentAddress][3].toString(2);
+                        target = safe(currentAddress+data[currentAddress][2]);
+                        source = safe(currentAddress+data[currentAddress][1]);
+                        while(mask.length<4){
+                            mask = "0" + mask;
+                        }
+                        for(a=0;a<4;a++){
+                            if(mask.charAt(a)=="1"){
+                                data[target][a] = (data[target][a]*data[source][a])%16;
+                            }
+                        }
+                        player[currentPlayer].processList.shift();
+                        killAt(safe(currentAddress+1));
+                        player[currentPlayer].processList.push(safe(currentAddress+1));
+                        break;
+                    // Subtract literal value B from A with mask C
+                    case 13:
+                        mask = data[currentAddress][3].toString(2);
+                        target = safe(currentAddress+data[currentAddress][1]);
+                        while(mask.length<4){
+                            mask = "0" + mask;
+                        }
+                        for(a=0;a<4;a++){
+                            if(mask.charAt(a)=="1"){
+                                data[target][a] = (data[target][a]-data[currentAddress][2]+16)%16;
+                            }
+                        }
+                        player[currentPlayer].processList.shift();
+                        killAt(safe(currentAddress+1));
+                        player[currentPlayer].processList.push(safe(currentAddress+1));
+                        break;
+                    // Subtract value from address B from A with mask C
+                    case 14:
+                        mask = data[currentAddress][3].toString(2);
+                        source = safe(currentAddress+data[currentAddress][2]);
+                        target = safe(currentAddress+data[currentAddress][1]);
+                        while(mask.length<4){
+                            mask = "0" + mask;
+                        }
+                        for(a=0;a<4;a++){
+                            if(mask.charAt(a)=="1"){
+                                data[target][a] = (data[target][a]-data[source][a]+16)%16;
+                            }
+                        }
+                        player[currentPlayer].processList.shift();
+                        killAt(safe(currentAddress+1));
+                        player[currentPlayer].processList.push(safe(currentAddress+1));
+                        break;
+                    // A % value in B with mask C
+                    case 15:
+                        mask = data[currentAddress][3].toString(2);
+                        target = safe(currentAddress+data[currentAddress][1]);
+                        while(mask.length<4){
+                            mask = "0" + mask;
+                        }
+                        for(a=0;a<4;a++){
+                            if(mask.charAt(a)=="1"){
+                                if(data[currentAddress][2]!=0){
+                                    data[target][a] = data[target][a]%data[currentAddress][2];
+                                }
+                                else{
+                                    data[target][a] = 0;
+                                }
+                            }
+                        }
+                        player[currentPlayer].processList.shift();
+                        killAt(safe(currentAddress+1));
+                        player[currentPlayer].processList.push(safe(currentAddress+1));
+                        break;
+                }
+            }
+        }
+        else{
+            player[currentPlayer].status = "dead";
+        }
+    }
+    game.turn += 1;
+    draw();
+}
+cnvs = document.getElementById("theCanvas");
+ctx = cnvs.getContext("2d");
+boardWidth = cnvs.height;
+cellsPerRow = 16;
+cells = cellsPerRow*cellsPerRow;
+cellSize = Math.floor(boardWidth/cellsPerRow);
+tournament = {players:6,
+    currentRound:0,
+    wins:[],
+    maxProgramLength:16};
+for(a=0;a<tournament.players;a++){
+    tournament.wins[a] = [];
+    for(b=0;b<tournament.players;b++){
+        tournament.wins[a][b] = 0;
+    }
+}
+programs = [];
+for(a=0;a<tournament.players;a++){
+    programs[a] = [];
+    for(b=0;b<16;b++){
+        programs[a][b] = [];
+        for(c=0;c<4;c++){
+            programs[a][b][c] = 15;
+        }
+    }
+    programs[a] = strat_random();
+}
+prepRound();
+theInterval = setInterval(processStep,1);
+cnvs.onclick = function(){
+    clearInterval(theInterval);
+}
+</script>
+</html>
